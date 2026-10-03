@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ZeroThirst AI - Dashboard</title>
+<style>
+:root{--bg:#f4f8f7;--card:#fff;--tx:#12332d;--mut:#5d7a74;--bd:#dbe7e4;--ac:#0e9f8e;--bl:#2d7ff9;--wr:#e8a317;--cr:#e0463c}
+@media(prefers-color-scheme:dark){:root{--bg:#0c1816;--card:#142522;--tx:#e3f2ef;--mut:#8db0a9;--bd:#223b36}}
+*{box-sizing:border-box}body{margin:0;font:14px system-ui,sans-serif;background:var(--bg);color:var(--tx)}
+header{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;padding:16px 24px}
+h1{font-size:20px;margin:0}h1 span{color:var(--ac)}small,.mut{color:var(--mut)}
+main{padding:0 24px 24px;display:grid;gap:16px;max-width:1200px;margin:auto}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi b{display:block;font-size:26px;margin:4px 0}.kpi .u{font-size:13px;color:var(--mut)}
+.row{display:grid;grid-template-columns:2fr 1fr;gap:16px}@media(max-width:800px){.row{grid-template-columns:1fr}}
+.seg button{border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:8px 14px;cursor:pointer}
+.seg button:first-child{border-radius:8px 0 0 8px}.seg button:last-child{border-radius:0 8px 8px 0}
+.seg button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+.racks{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.rack{border-radius:10px;padding:12px;border:2px solid var(--ok,var(--ac))}.rack b{font-size:22px}
+svg{width:100%;height:200px}.leg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin:0 4px 0 12px}
+.al{padding:6px 0;border-bottom:1px solid var(--bd)}h2{font-size:15px;margin:0 0 10px}
+input[type=range]{width:100%;accent-color:var(--ac)}code{font-size:12px;color:var(--mut)}
+</style>
+</head>
+<body>
+<header>
+  <div><h1><span>💧 ZeroThirst AI</span> · Akıllı Kaynak Yönetimi</h1><small>EcoGirls · Veri merkezi su ve enerji izleme paneli (<span id="sim">0</span> dk simülasyon)</small></div>
+  <div class="seg"><button id="m-predictive">Proaktif AI</button><button id="m-reactive">Reaktif (geleneksel)</button></div>
+</header>
+<main>
+  <div class="kpis" id="kpis"></div>
+  <div class="row">
+    <div class="card"><h2>Soğutma suyu akışı (L/dk, toplam)</h2><svg id="chart" viewBox="0 0 600 200" preserveAspectRatio="none"></svg>
+      <div class="leg mut"><i style="background:var(--ac)"></i>Gerçek akış<i style="background:var(--mut)"></i>Geleneksel taban çizgi</div></div>
+    <div class="card"><h2>Su Adaleti: yerel sulamaya aktarım</h2>
+      <b style="font-size:26px"><span id="al">40</span>%</b> <small>tasarruf edilen suyun payı</small>
+      <input type="range" id="slider" min="0" max="100" value="40">
+      <p class="mut">Kurtarılan su: <b id="irr">0</b> L tarımsal sulamaya ayrıldı.</p>
+      <h2 style="margin-top:14px">Uyarılar</h2><div id="alerts" class="mut">Uyarı yok</div></div>
+  </div>
+  <div class="card"><h2>Raf bölgeleri (IoT sensör verisi)</h2><div class="racks" id="racks"></div></div>
+  <div class="card mut"><code>Bu sürüm tarayıcıda tek başına çalışır (simülasyon sayfanın içinde). Gerçek API sürümü için server.py kullanın.</code></div>
+</main>
+<script>
+const SCALE=30,EVAP=.015,STEP=5,CO2=.45,BASE=14,clamp=(x,a,b)=>Math.max(a,Math.min(b,x)),ck=f=>.09*f+.4;
+let S;
+function init(mode='predictive',alloc=40){S={mode,alloc,t:0,hist:[],alerts:[],T:{bl:0,al:0,bk:0,ak:0},racks:[0,1,2,3].map(i=>({id:i+1,name:'Raf-'+'ABCD'[i],temp:26,load:6.5,flow:15,burst:0,flush:false,alarm:false,h:[26,26,26,26]}))}}
+function tick(){S.t+=STEP;const day=Math.sin(2*Math.PI*(S.t/1440-.25));let it=0,ak=0,af=0;
+for(const r of S.racks){if(r.burst>0)r.burst--;else if(Math.random()<.04)r.burst=4+Math.floor(Math.random()*6);
+const heat=6.5+2*day+(Math.random()-.5)*.8+(r.burst?4.5:0);r.load=heat;const slope=(r.h[3]-r.h[0])/3;
+if(S.mode=='predictive'){r.flow=clamp(heat/.5+3*(r.temp+3*slope-27),4,30)}else{r.flush=r.temp>29.5||(r.flush&&r.temp>26);r.flow=r.flush?28:15}
+r.temp=clamp(r.temp+.12*(heat-.5*r.flow)-.03*(r.temp-22),20,45);r.h.push(r.temp);r.h.shift();
+if(r.temp>31&&!r.alarm){r.alarm=true;S.alerts.unshift({t:S.t,msg:r.name+' '+r.temp.toFixed(1)+'°C - kritik sıcaklık'})}else if(r.temp<29)r.alarm=false;
+it+=heat;ak+=ck(r.flow);af+=r.flow}
+const T=S.T;T.al+=af*EVAP*STEP*SCALE;T.bl+=BASE*4*EVAP*STEP*SCALE;T.ak+=ak*STEP/60*SCALE;T.bk+=ck(BASE)*4*STEP/60*SCALE;
+S.hist.push({it_kw:it*SCALE,flow:af,base_flow:BASE*4,pue:(it+ak+.06*it)/it});if(S.hist.length>120)S.hist.shift();if(S.alerts.length>20)S.alerts.pop()}
+function impact(){const T=S.T,h=S.hist[S.hist.length-1],saved=Math.max(0,T.bl-T.al),wp=T.bl?saved/T.bl*100:0,sk=Math.max(0,T.bk-T.ak),ep=T.bk?sk/T.bk*100:0;
+return{mode:S.mode,water_saved_l:Math.round(saved),water_saved_pct:+wp.toFixed(1),energy_saved_kwh:Math.round(sk),energy_saved_pct:+ep.toFixed(1),co2_avoided_kg:Math.round(sk*CO2),irrigation_alloc_pct:S.alloc,irrigation_l:Math.round(saved*S.alloc/100),pue:+h.pue.toFixed(3),wue_l_per_kwh:+(h.flow*EVAP*60*SCALE/h.it_kw).toFixed(2),social_impact_index:Math.round(.4*Math.min(100,wp*3.3)+.25*Math.min(100,ep*3.3)+.35*S.alloc)}}
+const API={get(u){if(u=='/api/impact')return impact();if(u=='/api/history')return S.hist;if(u=='/api/alerts')return S.alerts;return{mode:S.mode,sim_minutes:S.t,racks:S.racks.map(r=>({id:r.id,name:r.name,temp:r.temp,load:r.load,flow:r.flow}))}},
+post(u,b){if(u=='/api/mode')S.mode=b.mode;else if(u=='/api/alloc')S.alloc=clamp(+b.alloc,0,100);else if(u=='/api/reset')init(S.mode,S.alloc)}};
+init();for(let i=0;i<24;i++)tick();setInterval(tick,1000);
+const $=id=>document.getElementById(id),j=u=>Promise.resolve(API.get(u)),
+post=(u,b)=>Promise.resolve(API.post(u,b));
+const f=n=>Number(n).toLocaleString('tr-TR');
+$('m-predictive').onclick=()=>post('/api/mode',{mode:'predictive'});
+$('m-reactive').onclick=()=>post('/api/mode',{mode:'reactive'});
+let drag=false;const sl=$('slider');
+sl.oninput=()=>{drag=true;$('al').textContent=sl.value};
+sl.onchange=()=>{post('/api/alloc',{alloc:+sl.value});drag=false};
+function line(a,mx,c,dash){return `<polyline fill="none" stroke="${c}" stroke-width="2" ${dash?'stroke-dasharray="5 4"':''} points="${a.map((v,i)=>`${i/(a.length-1)*600},${195-v/mx*185}`).join(' ')}"/>`}
+async function refresh(){
+  const [s,i,h,a]=await Promise.all([j('/api/state'),j('/api/impact'),j('/api/history'),j('/api/alerts')]);
+  $('sim').textContent=f(s.sim_minutes);
+  ['predictive','reactive'].forEach(m=>$('m-'+m).classList.toggle('on',s.mode===m));
+  const K=[['Kurtarılan su',f(i.water_saved_l),'L · %'+i.water_saved_pct],['Enerji tasarrufu',f(i.energy_saved_kwh),'kWh · %'+i.energy_saved_pct],
+   ['PUE',i.pue,'hedef < 1.3'],['WUE',i.wue_l_per_kwh,'L/kWh'],['Karbon azaltımı',f(i.co2_avoided_kg),'kg CO₂'],['Sosyal Etki Endeksi',i.social_impact_index,'/ 100']];
+  $('kpis').innerHTML=K.map(k=>`<div class="card kpi"><span class="mut">${k[0]}</span><b>${k[1]}</b><span class="u">${k[2]}</span></div>`).join('');
+  $('irr').textContent=f(i.irrigation_l);if(!drag){sl.value=i.irrigation_alloc_pct;$('al').textContent=i.irrigation_alloc_pct}
+  const mx=Math.max(...h.map(p=>p.base_flow),...h.map(p=>p.flow))*1.1;
+  $('chart').innerHTML=line(h.map(p=>p.base_flow),mx,'var(--mut)',1)+line(h.map(p=>p.flow),mx,'var(--ac)');
+  $('racks').innerHTML=s.racks.map(r=>{const c=r.temp>31?'var(--cr)':r.temp>29?'var(--wr)':'var(--ac)';
+   return `<div class="rack" style="--ok:${c}"><span class="mut">${r.name}</span><br><b>${r.temp.toFixed(1)}°C</b><br><small>${r.load.toFixed(1)} kW · ${r.flow.toFixed(0)} L/dk</small></div>`}).join('');
+  $('alerts').innerHTML=a.length?a.slice(0,5).map(x=>`<div class="al">🔴 ${x.msg} <small>(${f(x.t)}. dk)</small></div>`).join(''):'Uyarı yok';
+}
+refresh();setInterval(refresh,1500);
+</script>
+</body>
+</html>
